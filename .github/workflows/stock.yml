@@ -1,0 +1,36 @@
+name: Daily Stock Sync & Forecast
+
+on:
+  schedule:
+    - cron: '0 1 * * *'    # 每天 UTC 1:00（北京时间 9:00）
+  workflow_dispatch:        # 允许手动运行
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > serviceAccountKey.json
+
+      - name: Write config.ini
+        run: |
+          echo "[keys]" > config.ini
+          echo "GEMINI_API_KEY = ${{ secrets.GEMINI_API_KEY }}" >> config.ini
+          echo "FMP_API_KEY = ${{ secrets.FMP_API_KEY }}" >> config.ini
+
+      - name: Run sync
+        run: python sync_stocks.py
+
+      - name: Run forecast
+        run: python generate_forecast.py
