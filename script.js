@@ -55,6 +55,31 @@ function guessRegion(symbol) {
     return '美股';
 }
 
+// 根据地区返回货币符号
+function getCurrencySymbol(region) {
+    if (region === '港股') return 'HK$';
+    if (region === '美股') return '$';
+    return '¥'; // 默认人民币（未来扩展）
+}
+
+// ---------- 默认股票初始化（无需写入 Firestore）----------
+function ensureDefaultStock() {
+    if (Object.keys(STOCKS).length > 0) return; // 已有股票，不需要初始化
+    const defaultSymbol = 'AAPL';
+    const region = guessRegion(defaultSymbol);
+    STOCKS[defaultSymbol] = {
+        name: 'AAPL',
+        logo: getLogoUrl(defaultSymbol),
+        accuracy: '--',
+        history: [],
+        forecast: [],
+        reason: '数据加载中...',
+        region: region
+    };
+    saveToCache();
+    setupSubscription(defaultSymbol);
+}
+
 // ---------- 页面初始化 ----------
 window.onload = async () => {
     const resetContainer = document.createElement('div');
@@ -66,6 +91,8 @@ window.onload = async () => {
     if (addBtn) addBtn.onclick = () => addStock();
 
     initSearchLogic();
+    // 确保新用户/清除缓存后至少显示 AAPL
+    ensureDefaultStock();
     render();
     Object.keys(STOCKS).forEach(id => setupSubscription(id));
 };
@@ -201,7 +228,8 @@ window.addStock = async function () {
         accuracy: '--',
         history: [],
         forecast: [],
-        reason: '数据拉取中...'
+        reason: '数据拉取中...',
+        region: finalRegion
     };
 
     try {
@@ -290,6 +318,8 @@ function render() {
 
         const lastPrice = s.history?.length ? s.history[s.history.length - 1].price : 0;
         const nextPrice = s.forecast?.length ? s.forecast[0].price : 0;
+        const region = s.region || guessRegion(id);
+        const currencySymbol = getCurrencySymbol(region);
         const colorClass = nextPrice >= lastPrice ? 'price-up' : 'price-down';
         const logoUrls = Array.isArray(s.logo) ? s.logo : [s.logo];
 
@@ -309,7 +339,7 @@ function render() {
                     <div class="flex items-center gap-6">
                         <div class="text-right">
                             <p class="text-[9px] text-gray-500 font-bold">明日预测价</p>
-                            <p class="font-mono font-bold ${isError ? 'text-gray-500' : colorClass}">${isError ? '--' : '¥' + nextPrice.toFixed(2)}</p>
+                            <p class="font-mono font-bold ${isError ? 'text-gray-500' : colorClass}">${isError ? '--' : currencySymbol + nextPrice.toFixed(2)}</p>
                         </div>
                         <div class="text-right">
                             <p class="text-[9px] text-gray-500 font-bold">预测准确率</p>
@@ -390,6 +420,14 @@ function initChart(id) {
         return p1 >= p0 ? '#ff453a' : '#32d74b';
     };
 
+    // 辅助函数：向前查找第一个非空值
+    const findPrevValid = (data, index) => {
+        for (let i = index - 1; i >= 0; i--) {
+            if (data[i] !== null) return data[i];
+        }
+        return null;
+    };
+
     const datasets = [
         {
             label: '历史价格',
@@ -402,10 +440,10 @@ function initChart(id) {
             pointHoverBorderWidth: 0,
             pointBackgroundColor: function(ctx) {
                 const idx = ctx.dataIndex;
-                if (idx === 0) return '#ff453a';
-                const prev = ctx.dataset.data[idx - 1];
                 const curr = ctx.dataset.data[idx];
-                if (prev == null || curr == null) return '#ff453a';
+                if (curr == null) return '#ff453a';
+                const prev = findPrevValid(ctx.dataset.data, idx);
+                if (prev == null) return '#ff453a';
                 return curr >= prev ? '#ff453a' : '#32d74b';
             },
             spanGaps: false,
@@ -422,10 +460,10 @@ function initChart(id) {
             pointHoverBorderWidth: 0,
             pointBackgroundColor: function(ctx) {
                 const idx = ctx.dataIndex;
-                if (idx === 0) return '#ff453a';
-                const prev = ctx.dataset.data[idx - 1];
                 const curr = ctx.dataset.data[idx];
-                if (prev == null || curr == null) return '#ff453a';
+                if (curr == null) return '#ff453a';
+                const prev = findPrevValid(ctx.dataset.data, idx);
+                if (prev == null) return '#ff453a';
                 return curr >= prev ? '#ff453a' : '#32d74b';
             },
             spanGaps: false,
@@ -447,7 +485,11 @@ function initChart(id) {
                     intersect: false,
                     displayColors: false,
                     callbacks: {
-                        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`
+                        label: (context) => {
+                            const region = s.region || guessRegion(id);
+                            const currencySymbol = getCurrencySymbol(region);
+                            return `${context.dataset.label}: ${currencySymbol}${context.parsed.y.toFixed(2)}`;
+                        }
                     }
                 }
             },
@@ -523,8 +565,8 @@ function initChart(id) {
                     ctx.moveTo(lastHistPoint.x, lastHistPoint.y);
                     ctx.lineTo(firstForePoint.x, firstForePoint.y);
 
-                    const lastHistPrice = histData.findLast(d => d !== null);
-                    const firstForePrice = foreData.find(d => d !== null);
+                    const lastHistPrice = histData.filter(d => d !== null).pop();
+                    const firstForePrice = foreData.filter(d => d !== null)[0];
                     const color = (firstForePrice >= lastHistPrice) ? '#ff453a' : '#32d74b';
                     ctx.strokeStyle = color;
                     ctx.lineWidth = 2;
@@ -614,13 +656,10 @@ window.clearAllData = () => {
     if (confirm("确定清空所有自选股和本地缓存吗？")) {
         Object.values(subscriptions).forEach(unsub => unsub());
         for (const key in subscriptions) delete subscriptions[key];
-
-        const keepAAPL = STOCKS['AAPL'] ? { AAPL: STOCKS['AAPL'] } : {
-            AAPL: { name: 'AAPL', logo: getLogoUrl('AAPL'), accuracy: '--', history: [], forecast: [], reason: '已清空' }
-        };
-        STOCKS = { AAPL: keepAAPL };
+        STOCKS = {}; // 清空对象
         saveToCache();
-        setupSubscription('AAPL');
+        // 重新初始化默认股票
+        ensureDefaultStock();
         activeId = 'AAPL';
         render();
     }

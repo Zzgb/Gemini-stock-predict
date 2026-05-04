@@ -10,36 +10,41 @@
  *    - Language: Python
  *    - Data Source: AkShare (HK/US Stocks)
  *    - DB Instance: Firebase (Firestore) - Name: gupiaoyucedata
- *    - Auth: Firebase Admin SDK (serviceAccountKey.json)
+ *    - Auth: Firebase Admin SDK (通过 GitHub Secrets 安全存储)
+ *    - News API: Financial Modeling Prep (FMP) – 每日拉取个股新闻
  * 
  * 2. 数据采集逻辑 (Sync Logic):
- *    - Initial Load: 新加入自选股初始拉取最近 30 个交易日历史价格，并自动合并去重，保证连续性
+ *    - Initial Load: 新自选股拉取最近 30 个交易日历史价格，合并去重
  *    - Sync Strategy: 日常增量更新覆盖最近 30 天，全量标识库采用批量读取，节省配额
- *    - Writing: 使用合并策略优雅覆盖历史数据，保持日期纯净 (YYYY-MM-DD)
+ *    - News Sync: 每日 9:00 UTC+8 从 FMP 拉取最新 5 条个股新闻，存入 news/{symbol} 文档
  * 
  * 3. 前端架构 (Frontend Architecture):
  *    - Framework: HTML5, Tailwind CSS
  *    - Charting: Chart.js
  *    - Communication: Firebase Web SDK (v10) - onSnapshot 实时流监听
  *    - Local Cache: localStorage (自选列表、全量股票缓存、更新时间戳)
- *    - 搜索: 按需从 Firestore 加载全量股票并缓存，支持键盘上下选择、回车确认
+ *    - Search: 按需从 Firestore 加载全量股票并缓存，支持键盘上下选择、回车确认
+ *    - Initialization: 新用户自动显示 AAPL 股票数据（无写入操作）
  * 
  * 4. 绘图与 UI 特性 (UI/UX Features):
  *    - Grid: 最后一条历史数据处垂直虚线分界 (tLine plugin)
  *    - Rendering: 历史实线 / 预测虚线分段绘制，无假数据连接点
  *    - Connector: 历史与预测之间通过插件动态绘制虚线，颜色跟随涨跌
- *    - Logic: 线段与点色动态红涨绿跌 (基于 P1-P0 差值)
+ *    - Logic: 线段与点色动态红涨绿跌 (基于前一个有效点比较)
  *    - Interaction: 鼠标跟随半透明竖线、index 模式 Tooltip、缩放与横向滚动条
  *    - Accuracy: 实时计算历史收盘价与预测价的平均准确率，纯前端无额外读取
+ *    - Currency: 根据股票市场自动显示 HK$ / $ / ¥
  * 
  * 5. 预测引擎 (AI Model):
- *    - Engine: Google Gemini API
+ *    - Engine: Google Gemini API (gemini-3.1-flash-lite-preview)
+ *    - Input: 历史价格 + 新闻标题
  *    - Output: Forecast Price (T+1/T+2/T+3, 仅交易日), Accuracy, Analysis Reason
  *    - Fallback: 若 Gemini 不可用，自动回退至移动平均占位预测
  * 
- * 6. 后端服务 (Backend Services):
- *    - 实时监听: main.py 监听 settings/list 变化，自动同步新自选股并触发单只预测
- *    - 定时任务: 每日 16:30 全量同步 + 全量预测，确保数据持续更新
- *    - 脚本: sync_stocks.py (历史同步), generate_forecast.py (预测生成), clear_forecasts.py (清空预测)
+ * 6. 后端服务与部署 (Backend & Deployment):
+ *    - 实时监听: main.py 监听 settings/list 变化，自动同步新自选股 → 新闻 → 预测
+ *    - 定时任务: GitHub Actions (schedule: daily 9:00 UTC+8) 执行历史同步 + 新闻拉取 + 全量预测
+ *    - 托管: GitHub Pages (前端静态网站) + GitHub Actions (后端定时任务)
+ *    - 密钥管理: config_loader.py 优先读取 config.ini，回退到环境变量；生产环境通过 GitHub Secrets 注入
  * 
  */ -->

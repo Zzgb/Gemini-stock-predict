@@ -137,7 +137,7 @@ if __name__ == "__main__":
     # 不自动执行全量同步，避免启动时的配额浪费
     init_or_update_list_doc()
     listener = start_listener()
-    schedule.every().day.at("9:00").do(scheduled_job)
+    schedule.every().day.at("09:00").do(scheduled_job)
     print("⏳ 定时任务已设置：每天 9:00")
     try:
         while True:
