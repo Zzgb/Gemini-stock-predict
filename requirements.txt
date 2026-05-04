@@ -1,0 +1,5 @@
+firebase-admin
+akshare
+google-generativeai
+schedule
+requests

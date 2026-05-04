@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+
+:root {
+    --up: #ff453a;   /* 涨：红 */
+    --down: #32d74b; /* 跌：绿 */
+    --bg: #000000;
+    --border: rgba(255,255,255,0.08);
+}
+
+body {
+    background-color: var(--bg);
+    color: white;
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding-bottom: 100px; /* 为底部按钮留出空间 */
+}
+
+/* 1. 统一 Logo 容器 */
+.logo-wrapper {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.logo-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+
+/* 2. 恢复全局重置按钮位置 */
+.reset-container {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 9999;
+}
+.reset-btn {
+    background: rgba(30,30,30,0.8);
+    border: 1px solid #333;
+    color: #666;
+    font-size: 11px;
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+}
+.reset-btn:hover { border-color: #ff453a; color: #ff453a; }
+
+/* 3. 搜索联想框 */
+.search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-top: 8px;
+    z-index: 9999;
+    display: none;
+}
+.search-item {
+    padding: 12px 15px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+}
+.search-item:hover { background: rgba(255,255,255,0.1); }
+
+/* 4. 涨跌颜色辅助类 */
+.price-up { color: var(--up) !important; }
+.price-down { color: var(--down) !important; }
+
+/* 5. 卡片样式 */
+.glass-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    margin-bottom: 12px;
+}
+.active-card { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); }
+
+/* 自定义滚动条滑块（暗色） */
+input[type=range]#chart-scroll {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 4px;
+    border-radius: 2px;
+}
+input[type=range]#chart-scroll::-webkit-slider-runnable-track {
+    background: rgba(255,255,255,0.15);
+    height: 4px;
+    border-radius: 2px;
+}
+input[type=range]#chart-scroll::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.6);
+    margin-top: -4px;
+    cursor: pointer;
+}
+input[type=range]#chart-scroll::-moz-range-track {
+    background: rgba(255,255,255,0.15);
+    height: 4px;
+    border-radius: 2px;
+}
+input[type=range]#chart-scroll::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.6);
+    cursor: pointer;
+    border: none;
+}
