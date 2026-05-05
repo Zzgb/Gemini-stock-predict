@@ -1,33 +1,33 @@
-name: Daily Stock Sync & Forecast
+name: 每日全量同步与预测
 
 on:
   schedule:
     - cron: '0 1 * * *'    # 每天 UTC 1:00（北京时间 9:00）
-  workflow_dispatch:        # 允许手动运行
+  workflow_dispatch:        # 仍允许手动触发
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: 安装依赖包
         run: pip install -r requirements.txt
 
-      - name: Write service account key
+      - name: 写入 Firebase 密钥文件
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > serviceAccountKey.json
 
-      - name: Write config.ini
+      - name: 写入项目配置文件
         run: |
           echo "[keys]" > config.ini
           echo "GEMINI_API_KEY = ${{ secrets.GEMINI_API_KEY }}" >> config.ini
           echo "FMP_API_KEY = ${{ secrets.FMP_API_KEY }}" >> config.ini
 
-      - name: Run full sync + news + forecast
+      - name: 执行全量同步、新闻拉取与预测
         run: python -c "from main import scheduled_job; scheduled_job()"
