@@ -55,16 +55,24 @@ function guessRegion(symbol) {
     return '美股';
 }
 
-// 根据地区返回货币符号
 function getCurrencySymbol(region) {
     if (region === '港股') return 'HK$';
     if (region === '美股') return '$';
-    return '¥'; // 默认人民币（未来扩展）
+    return '¥';
 }
 
-// ---------- 默认股票初始化（无需写入 Firestore）----------
+// 获取最后一段历史价格的颜色（用于最新收盘价）
+function getLastHistColor(history) {
+    if (!history || history.length < 2) return 'text-gray-400'; // 不足两条默认灰色
+    const prices = history.map(item => item.price);
+    const last = prices[prices.length - 1];
+    const prev = prices[prices.length - 2];
+    return last >= prev ? 'text-red-500' : 'text-green-500';
+}
+
+// ---------- 默认股票初始化 ----------
 function ensureDefaultStock() {
-    if (Object.keys(STOCKS).length > 0) return; // 已有股票，不需要初始化
+    if (Object.keys(STOCKS).length > 0) return;
     const defaultSymbol = 'AAPL';
     const region = guessRegion(defaultSymbol);
     STOCKS[defaultSymbol] = {
@@ -91,7 +99,6 @@ window.onload = async () => {
     if (addBtn) addBtn.onclick = () => addStock();
 
     initSearchLogic();
-    // 确保新用户/清除缓存后至少显示 AAPL
     ensureDefaultStock();
     render();
     Object.keys(STOCKS).forEach(id => setupSubscription(id));
@@ -147,7 +154,7 @@ function initSearchLogic() {
             .filter(s => s.symbol.includes(query) || s.name.toUpperCase().includes(query))
             .slice(0, 5);
         resultBox.innerHTML = matches.map(m =>
-            `<div class="search-item" onmousedown="event.preventDefault(); selectStock('${m.symbol}')">${m.symbol} ${m.name}</div>`
+            `<div class="search-item" onmousedown="event.preventDefault(); selectStock('${m.symbol}', '${m.name}')">${m.symbol} ${m.name}</div>`
         ).join('');
         resultBox.style.display = matches.length ? 'block' : 'none';
         highlightIndex = -1;
@@ -176,7 +183,8 @@ function initSearchLogic() {
             e.preventDefault();
             if (highlightIndex >= 0 && items.length > 0) {
                 const sym = items[highlightIndex].textContent.split(' ')[0];
-                selectStock(sym);
+                const name = items[highlightIndex].textContent.substring(sym.length + 1);
+                selectStock(sym, name);
             } else {
                 addStock();
             }
@@ -191,8 +199,14 @@ function initSearchLogic() {
     });
 }
 
-window.selectStock = (id) => {
-    document.getElementById('stock-input').value = id;
+// ★ 修改 selectStock，接受名称参数
+window.selectStock = (id, name) => {
+    const input = document.getElementById('stock-input');
+    if (name) {
+        input.value = `${id} ${name}`;
+    } else {
+        input.value = id;
+    }
     document.getElementById('search-results').style.display = 'none';
     highlightIndex = -1;
 };
@@ -200,9 +214,12 @@ window.selectStock = (id) => {
 // ---------- 添加自选 ----------
 window.addStock = async function () {
     const input = document.getElementById('stock-input');
-    const val = input.value.toUpperCase().trim();
-    if (!val) { alert("未选择股票"); return; }
-
+    const rawVal = input.value.trim();
+    if (!rawVal) { alert("未选择股票"); return; }
+    
+    // 从输入框提取纯 symbol（可能包含名称）
+    const val = rawVal.split(' ')[0].toUpperCase();
+    
     let finalSymbol = val, finalName = val, finalRegion = guessRegion(val);
     if (allStocksReady) {
         const matched = allStocksCache.find(s =>
@@ -302,7 +319,7 @@ function calcAccuracy(history, forecast) {
     return totalAccuracy / count;
 }
 
-// ---------- 列表渲染 ----------
+// ---------- 列表渲染（卡片信息更新）----------
 function render() {
     const container = document.getElementById('stock-container');
     if (!container) return;
@@ -320,7 +337,8 @@ function render() {
         const nextPrice = s.forecast?.length ? s.forecast[0].price : 0;
         const region = s.region || guessRegion(id);
         const currencySymbol = getCurrencySymbol(region);
-        const colorClass = nextPrice >= lastPrice ? 'price-up' : 'price-down';
+        const forecastColorClass = nextPrice >= lastPrice ? 'price-up' : 'price-down';
+        const lastHistColorClass = getLastHistColor(s.history || []);
         const logoUrls = Array.isArray(s.logo) ? s.logo : [s.logo];
 
         return `
@@ -338,8 +356,12 @@ function render() {
                     </div>
                     <div class="flex items-center gap-6">
                         <div class="text-right">
-                            <p class="text-[9px] text-gray-500 font-bold">明日预测价</p>
-                            <p class="font-mono font-bold ${isError ? 'text-gray-500' : colorClass}">${isError ? '--' : currencySymbol + nextPrice.toFixed(2)}</p>
+                            <p class="text-[9px] text-gray-500 font-bold">最新收盘价</p>
+                            <p class="font-mono font-bold ${isError ? 'text-gray-500' : lastHistColorClass}">${isError ? '--' : currencySymbol + lastPrice.toFixed(2)}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[9px] text-gray-500 font-bold">下一个交易日预测收盘价</p>
+                            <p class="font-mono font-bold ${isError ? 'text-gray-500' : forecastColorClass}">${isError ? '--' : currencySymbol + nextPrice.toFixed(2)}</p>
                         </div>
                         <div class="text-right">
                             <p class="text-[9px] text-gray-500 font-bold">预测准确率</p>
@@ -374,7 +396,7 @@ function render() {
     if (activeId) setTimeout(() => initChart(activeId), 50);
 }
 
-// ---------- K线图 ----------
+// ---------- K线图（保持不变）----------
 function initChart(id) {
     const s = STOCKS[id];
     const canvas = document.getElementById('chart-canvas');
@@ -420,7 +442,6 @@ function initChart(id) {
         return p1 >= p0 ? '#ff453a' : '#32d74b';
     };
 
-    // 辅助函数：向前查找第一个非空值
     const findPrevValid = (data, index) => {
         for (let i = index - 1; i >= 0; i--) {
             if (data[i] !== null) return data[i];
@@ -458,13 +479,11 @@ function initChart(id) {
             pointBorderWidth: 0,
             pointHoverRadius: 6,
             pointHoverBorderWidth: 0,
-            // 预测数据集
             pointBackgroundColor: function(ctx) {
                 const idx = ctx.dataIndex;
                 const curr = ctx.dataset.data[idx];
                 if (curr == null) return '#ff453a';
                 let prev = findPrevValid(ctx.dataset.data, idx);
-                // 如果向前找不到有效值，则用最后一条历史收盘价比较
                 if (prev == null && histData.length > 0) {
                     const lastHistPrice = histData.filter(d => d !== null).pop();
                     if (lastHistPrice !== undefined) {
@@ -664,9 +683,8 @@ window.clearAllData = () => {
     if (confirm("确定清空所有自选股和本地缓存吗？")) {
         Object.values(subscriptions).forEach(unsub => unsub());
         for (const key in subscriptions) delete subscriptions[key];
-        STOCKS = {}; // 清空对象
+        STOCKS = {};
         saveToCache();
-        // 重新初始化默认股票
         ensureDefaultStock();
         activeId = 'AAPL';
         render();

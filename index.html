@@ -3,20 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股价预测系统</title>
+    <title>Gemini股价预测</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="./logo-L.png">
 </head>
 <body class="min-h-screen">
 
-    <!-- 动态星空背景 -->
     <canvas id="starCanvas" class="fixed top-0 left-0 w-full h-full pointer-events-none" style="z-index: 0;"></canvas>
 
     <nav class="max-w-6xl mx-auto px-6 py-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
-        <div>
-            <h1 class="text-3xl font-bold tracking-tight">AI 股价分析</h1>
-            <p class="text-xs text-gray-500 mt-1">数据存储与趋势预测</p>
+        <div class="flex items-center gap-3">
+            <img src="./logo-L.png" alt="Logo" style="width: 40px; height: 40px; border-radius: 8px;">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight">Gemini股价预测</h1>
+                <p class="text-xs text-gray-500 mt-1">数据存储与趋势预测</p>
+            </div>
         </div>
         <div class="flex gap-2 w-full md:w-auto">
             <input type="text" id="stock-input" placeholder="输入代码 (如 1810.HK)" class="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-white/30 flex-1 md:w-48 transition-all">
@@ -28,7 +31,6 @@
 
     <script type="module" src="./script.js"></script>
 
-    <!-- 流星星空（最终稳定版） -->
     <script>
         (function() {
             const canvas = document.getElementById('starCanvas');
@@ -41,8 +43,8 @@
             const MAX_METEORS = 10;
 
             const COLORS = {
-                UP: { r: 255, g: 69, b: 58 },   // 红
-                DOWN: { r: 50, g: 215, b: 75 }  // 绿
+                UP: { r: 255, g: 69, b: 58 },
+                DOWN: { r: 50, g: 215, b: 75 }
             };
 
             function resize() {
@@ -80,32 +82,30 @@
                     this.color = this.baseColor;
 
                     const fromLeft = Math.random() > 0.5;
-                    const innerMargin = height * 0.25;   // 保证出生点不贴边
+                    const innerMargin = height * 0.25;
 
                     if (this.goingUp) {
-                        // 上涨：从下方内部区域生成
                         this.y = height - innerMargin + Math.random() * (innerMargin * 0.6);
                         if (fromLeft) {
                             this.x = 10;
-                            this.baseAngle = -Math.PI * 0.5 + Math.random() * 0.3; // -90°~-36° 向右上
+                            this.baseAngle = -Math.PI * 0.5 + Math.random() * 0.3;
                         } else {
                             this.x = width - 10;
-                            this.baseAngle = -Math.PI * 0.8 + Math.random() * 0.3; // -144°~-90° 向左上
+                            this.baseAngle = -Math.PI * 0.8 + Math.random() * 0.3;
                         }
                     } else {
-                        // 下跌：从上方内部区域生成
                         this.y = innerMargin - Math.random() * (innerMargin * 0.6);
                         if (fromLeft) {
                             this.x = 10;
-                            this.baseAngle = Math.PI * 0.3 + Math.random() * 0.3; // 54°~108° 向右下
+                            this.baseAngle = Math.PI * 0.3 + Math.random() * 0.3;
                         } else {
                             this.x = width - 10;
-                            this.baseAngle = Math.PI * 0.6 + Math.random() * 0.3; // 108°~162° 向左下
+                            this.baseAngle = Math.PI * 0.6 + Math.random() * 0.3;
                         }
                     }
 
                     this.angle = this.baseAngle;
-                    this.speed = Math.random() * 6 + 6;   // 6~12，更快
+                    this.speed = Math.random() * 6 + 6;
                     this.trailLength = 30;
                     this.trailPoints = [];
                 }
@@ -119,7 +119,6 @@
                         this.trailPoints.shift();
                     }
 
-                    // 用拖尾末端（最早的点）判断离开屏幕
                     if (this.trailPoints.length === 0) return true;
                     const tail = this.trailPoints[0];
                     const margin = 80;
@@ -138,7 +137,6 @@
                         ctx.fill();
                         return;
                     }
-                    // 分段绘制，上升红，下降绿
                     for (let i = 1; i < points.length; i++) {
                         const prev = points[i - 1];
                         const curr = points[i];
@@ -152,7 +150,6 @@
                         ctx.lineWidth = 2;
                         ctx.stroke();
                     }
-                    // 头部亮点
                     const head = points[points.length - 1];
                     ctx.beginPath();
                     ctx.arc(head.x, head.y, 2.5, 0, Math.PI * 2);
@@ -188,7 +185,7 @@
                 });
 
                 meteorTimer += delta;
-                const spawnInterval = Math.random() * 2500 + 500; // 1.5~4秒生成一颗
+                const spawnInterval = Math.random() * 2500 + 500;
                 if (meteorTimer > spawnInterval) {
                     spawnMeteor();
                     meteorTimer = 0;
