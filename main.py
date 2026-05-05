@@ -1,7 +1,7 @@
 """
 后端常驻进程 - 实时监听 + 定时任务（集成港股新闻）
 - 监听 settings/list 变动，发现新增股票时执行：历史同步 -> 新闻拉取 -> 单只预测
-- 港股新闻使用 AkShare 全球财经接口 + 代码关键词过滤
+- 港股新闻使用 AkShare 全球财经接口 + 股票名称/代码关键词过滤
 - 美股新闻使用 FMP Stock News API，按 symbol 字段二次过滤
 - 新闻拉取函数可被其他脚本导入复用
 - 定时任务每日 9:00 执行：历史同步、新闻拉取、全量预测
@@ -43,7 +43,7 @@ def fetch_and_store_news(symbol, region):
     """
     拉取单只股票的新闻并覆盖写入 news/{symbol}。
     - 美股：使用 FMP API，按返回的 symbol 字段二次过滤
-    - 港股：使用 AkShare 全球财经接口，在标题中搜索股票代码过滤
+    - 港股：使用 AkShare 全球财经接口，在标题中搜索股票名称/代码过滤
     """
     if region == "美股":
         _fetch_news_from_fmp(symbol)
@@ -90,21 +90,47 @@ def _fetch_news_from_fmp(symbol):
         print(f"   ❌ FMP 新闻拉取异常: {e}")
 
 def _fetch_news_from_akshare(symbol):
-    """通过 AkShare 全球财经接口获取港股个股新闻"""
+    """通过 AkShare 全球财经接口获取港股个股新闻。
+       成功时写入匹配到的新闻；失败或无匹配时，清空该股票的新闻文档。
+    """
     try:
+        # 1. 从 list 文档中获取中文名称
+        chinese_name = None
+        list_doc = db.collection("settings").document("list").get()
+        if list_doc.exists:
+            list_data = list_doc.to_dict()
+            for field_name, val in list_data.items():
+                if isinstance(val, list) and len(val) >= 2 and val[0] == symbol:
+                    chinese_name = val[2] if len(val) >= 3 else None
+                    break
+        
+        # 2. 构造关键词列表
+        keywords = [symbol, symbol.lstrip("0")]
+        if chinese_name:
+            keywords.append(chinese_name)
+        # 如果有中文名称，可以进一步添加简写（比如去掉后缀“-W”）
+        if chinese_name and "-" in chinese_name:
+            keywords.append(chinese_name.split("-")[0])
+        
+        print(f"   🔍 港股新闻搜索关键词: {keywords}")
+        
+        # 3. 拉取全球快讯
         df = ak.stock_info_global_em()
         if df is None or df.empty:
-            print("   ⚠️ AkShare 全球新闻接口未返回数据")
+            print("   ⚠️ AkShare 全球新闻接口未返回数据，即将清空旧新闻")
+            _write_news_to_firestore(symbol, [])
             return
-
-        # 按股票代码在标题中搜索（港股常见代码格式：01810、1810、小米等）
-        keywords = [symbol, symbol.lstrip("0")]  # 01810 -> 1810
+        
+        # 4. 在标题中搜索关键词
         pattern = '|'.join(keywords)
         matched = df[df['标题'].str.contains(pattern, case=False, na=False)]
+        
         if matched.empty:
-            print(f"   ⚠️ {symbol} 未找到相关港股新闻，保留旧数据")
+            print(f"   ⚠️ {symbol} 未找到相关港股新闻，即将清空旧新闻")
+            _write_news_to_firestore(symbol, [])
             return
-
+        
+        # 5. 提取新闻
         news_items = []
         for _, row in matched.head(5).iterrows():
             news_items.append({
@@ -114,15 +140,18 @@ def _fetch_news_from_akshare(symbol):
                 "published": str(row.get("发布时间", ""))
             })
         _write_news_to_firestore(symbol, news_items, filtered_len=len(matched))
+        
     except Exception as e:
-        print(f"   ❌ AkShare 新闻拉取异常: {e}")
+        print(f"   ❌ AkShare 新闻拉取异常: {e}，即将清空旧新闻")
+        _write_news_to_firestore(symbol, [])
 
 def _write_news_to_firestore(symbol, news_items, raw_len=0, filtered_len=0):
-    """将新闻写入 Firestore news/{symbol} 文档，覆盖旧数据"""
-    if not news_items:
-        return
+    """将新闻写入 Firestore news/{symbol} 文档，覆盖旧数据。
+       允许 news_items 为空列表，此时会清空该股票的新闻。
+    """
     news_ref = db.collection("news").document(symbol)
     now = datetime.now()
+    
     if news_ref.get().exists:
         news_ref.update({"news": news_items, "update_time": now})
     else:
@@ -132,8 +161,12 @@ def _write_news_to_firestore(symbol, news_items, raw_len=0, filtered_len=0):
             "create_by": "DeepSeek",
             "update_time": now
         })
+    
     log_extra = f"，原始{raw_len}条 → 过滤后{filtered_len}条" if raw_len else ""
-    print(f"   ✅ {symbol} 新闻已更新 ({len(news_items)}条){log_extra}")
+    if news_items:
+        print(f"   ✅ {symbol} 新闻已更新 ({len(news_items)}条){log_extra}")
+    else:
+        print(f"   🧹 {symbol} 无相关新闻，已清空旧数据")
 
 # ---------- 实时监听 ----------
 previous_fields = set()

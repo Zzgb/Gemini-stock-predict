@@ -57,14 +57,18 @@ def dummy_forecast(history, days=3):
 
 # ---------- 从 news 集合读取新闻 ----------
 def get_recent_news(symbol):
-    """返回该股票的最新5条新闻标题列表（字符串）"""
+    """返回该股票的最新5条新闻标题列表（字符串），若无有效新闻则返回空列表"""
     news_ref = db.collection("news").document(symbol)
     doc = news_ref.get()
     if not doc.exists:
         return []
     data = doc.to_dict()
     items = data.get("news", [])
-    return [item["title"] for item in items[:5]]
+    # 严格校验：只有当 items 是非空列表，且其中至少有一条包含有效 title 字段的新闻时，才提取标题
+    if not items or not isinstance(items, list):
+        return []
+    titles = [item.get("title", "") for item in items if item.get("title", "").strip()]
+    return titles[:5] if titles else []
 
 # ---------- Gemini 预测 ----------
 def gemini_forecast(history, recent_news=None, days=3):
