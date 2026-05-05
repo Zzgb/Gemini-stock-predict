@@ -45,10 +45,28 @@
  *    - Fallback: 若 Gemini 不可用，自动回退至移动平均占位预测
  * 
  * 6. 后端服务与部署 (Backend & Deployment):
- *    - 实时监听: main.py 监听 settings/list 变化，自动同步新自选股 → 新闻 → 预测
+ *    - 实时监听: Hugging Face Space 运行 app.py，监听 Firestore 变化，自动同步新自选股 → 新闻 → 预测
  *    - 定时任务: GitHub Actions (schedule: daily 9:00 UTC+8) 执行历史同步 + 新闻拉取 + 全量预测
  *    - 托管: GitHub Pages (前端静态网站) + GitHub Actions (后端定时任务)
  *    - 密钥管理: config_loader.py 优先读取 config.ini，回退到环境变量；生产环境通过 GitHub Secrets 注入
  *    - 清理机制: 月度清理不活跃股票 (30天未访问) 与残留 stocks 文档
+ *    - Space 保活: cron-job.org 每 5 分钟 GET 请求防休眠
  * 
  */ -->
+
+---
+
+## 📎 本项目涉及的主要服务与 API 官网
+
+| 服务 / API | 官方网站 / 控制台 |
+|------------|------------------|
+| Firebase (Firestore 数据库) | [https://console.firebase.google.com](https://console.firebase.google.com) |
+| GitHub Pages (前端托管) | [https://pages.github.com](https://pages.github.com) |
+| GitHub Actions (定时任务) | [https://github.com/features/actions](https://github.com/features/actions) |
+| Hugging Face Spaces (实时监听) | [https://huggingface.co/spaces](https://huggingface.co/spaces) |
+| Google Gemini API (AI 预测) | [https://aistudio.google.com](https://aistudio.google.com) |
+| Financial Modeling Prep (美股新闻) | [https://site.financialmodelingprep.com/developer/docs](https://site.financialmodelingprep.com/developer/docs) |
+| AkShare (港股新闻 / 历史数据) | [https://akshare.akfamily.xyz](https://akshare.akfamily.xyz) |
+| cron-job.org (Space 保活) | [https://cron-job.org](https://cron-job.org) |
+
+> 以上链接均为相应服务的官方首页或开发者入口，用于快速访问管理后台或查阅文档。
