@@ -11,12 +11,14 @@
  *    - Data Source: AkShare (HK/US Stocks)
  *    - DB Instance: Firebase (Firestore) - Name: gupiaoyucedata
  *    - Auth: Firebase Admin SDK (通过 GitHub Secrets 安全存储)
- *    - News API: Financial Modeling Prep (FMP) – 每日拉取个股新闻
+ *    - News API (美股): Financial Modeling Prep (FMP) – 每日拉取美股个股新闻
+ *    - News API (港股): AkShare 全球财经接口 – 按股票代码过滤相关新闻
  * 
  * 2. 数据采集逻辑 (Sync Logic):
  *    - Initial Load: 新自选股拉取最近 30 个交易日历史价格，合并去重
  *    - Sync Strategy: 日常增量更新覆盖最近 30 天，全量标识库采用批量读取，节省配额
- *    - News Sync: 每日 9:00 UTC+8 从 FMP 拉取最新 5 条个股新闻，存入 news/{symbol} 文档
+ *    - News Sync: 通过定时任务或实时监听自动拉取最新 5 条个股新闻，按 symbol 二次过滤，存入 news/{symbol} 文档
+ *    - Writing: 使用合并策略优雅覆盖历史数据，保持日期纯净 (YYYY-MM-DD)
  * 
  * 3. 前端架构 (Frontend Architecture):
  *    - Framework: HTML5, Tailwind CSS
@@ -25,6 +27,7 @@
  *    - Local Cache: localStorage (自选列表、全量股票缓存、更新时间戳)
  *    - Search: 按需从 Firestore 加载全量股票并缓存，支持键盘上下选择、回车确认
  *    - Initialization: 新用户自动显示 AAPL 股票数据（无写入操作）
+ *    - Currency: 根据股票市场自动显示 HK$ / $ / ¥
  * 
  * 4. 绘图与 UI 特性 (UI/UX Features):
  *    - Grid: 最后一条历史数据处垂直虚线分界 (tLine plugin)
@@ -33,7 +36,7 @@
  *    - Logic: 线段与点色动态红涨绿跌 (基于前一个有效点比较)
  *    - Interaction: 鼠标跟随半透明竖线、index 模式 Tooltip、缩放与横向滚动条
  *    - Accuracy: 实时计算历史收盘价与预测价的平均准确率，纯前端无额外读取
- *    - Currency: 根据股票市场自动显示 HK$ / $ / ¥
+ *    - Background: 动态星空 + 红绿流星粒子背景 (红涨绿跌方向限制)
  * 
  * 5. 预测引擎 (AI Model):
  *    - Engine: Google Gemini API (gemini-3.1-flash-lite-preview)
@@ -46,5 +49,6 @@
  *    - 定时任务: GitHub Actions (schedule: daily 9:00 UTC+8) 执行历史同步 + 新闻拉取 + 全量预测
  *    - 托管: GitHub Pages (前端静态网站) + GitHub Actions (后端定时任务)
  *    - 密钥管理: config_loader.py 优先读取 config.ini，回退到环境变量；生产环境通过 GitHub Secrets 注入
+ *    - 清理机制: 月度清理不活跃股票 (30天未访问) 与残留 stocks 文档
  * 
  */ -->

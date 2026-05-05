@@ -458,11 +458,19 @@ function initChart(id) {
             pointBorderWidth: 0,
             pointHoverRadius: 6,
             pointHoverBorderWidth: 0,
+            // 预测数据集
             pointBackgroundColor: function(ctx) {
                 const idx = ctx.dataIndex;
                 const curr = ctx.dataset.data[idx];
                 if (curr == null) return '#ff453a';
-                const prev = findPrevValid(ctx.dataset.data, idx);
+                let prev = findPrevValid(ctx.dataset.data, idx);
+                // 如果向前找不到有效值，则用最后一条历史收盘价比较
+                if (prev == null && histData.length > 0) {
+                    const lastHistPrice = histData.filter(d => d !== null).pop();
+                    if (lastHistPrice !== undefined) {
+                        prev = lastHistPrice;
+                    }
+                }
                 if (prev == null) return '#ff453a';
                 return curr >= prev ? '#ff453a' : '#32d74b';
             },

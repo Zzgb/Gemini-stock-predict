@@ -54,7 +54,7 @@ body {
     top: 100%;
     left: 0;
     right: 0;
-    background: #1a1a1a; /* 纯色不透明 */
+    background: #0d0d0d;        /* 更深的不透明黑 */
     border: 1px solid var(--border);
     border-radius: 10px;
     margin-top: 8px;

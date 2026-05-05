@@ -29,8 +29,5 @@ jobs:
           echo "GEMINI_API_KEY = ${{ secrets.GEMINI_API_KEY }}" >> config.ini
           echo "FMP_API_KEY = ${{ secrets.FMP_API_KEY }}" >> config.ini
 
-      - name: Run sync
-        run: python sync_stocks.py
-
-      - name: Run forecast
-        run: python generate_forecast.py
+      - name: Run full sync + news + forecast
+        run: python -c "from main import scheduled_job; scheduled_job()"
