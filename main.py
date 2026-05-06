@@ -20,6 +20,10 @@ from config_loader import get_key
 from sync_stocks import smart_sync_logic, init_or_update_list_doc, update_all_stock_identifiers
 from generate_forecast import generate_and_update_forecasts, generate_single_forecast
 
+def log(msg, level="INFO"):
+    """统一日志输出，带时间戳"""
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{level}] {msg}")
+
 # ---------- 初始化 Firebase ----------
 def get_firebase_credentials():
     if os.path.exists("serviceAccountKey.json"):
@@ -53,26 +57,25 @@ def fetch_and_store_news(symbol, region):
 def _fetch_news_from_fmp(symbol):
     """通过 FMP API 获取美股个股新闻"""
     if not FMP_API_KEY:
-        print("   ⚠️ FMP_API_KEY 未配置，跳过美股新闻")
+        log("FMP_API_KEY 未配置，跳过美股新闻", "WARN")
         return
     try:
         params = {"symbols": symbol, "limit": 5, "apikey": FMP_API_KEY}
         resp = requests.get(FMP_BASE_URL, params=params, timeout=10)
         if resp.status_code != 200:
-            print(f"   ❌ FMP 新闻请求失败 ({resp.status_code})")
+            log(f"FMP 新闻请求失败 ({resp.status_code})", "ERROR")
             return
         raw_articles = resp.json()
         if not raw_articles:
-            print(f"   ⚠️ {symbol} 无美股新闻数据")
+            log(f"{symbol} 无美股新闻数据", "WARN")
             return
 
-        # ★ 按 symbol 字段二次过滤，只保留本股新闻
         filtered = [art for art in raw_articles
                     if art.get("symbol", "").upper() == symbol.upper()]
         if filtered:
             articles = filtered
         else:
-            print(f"   ⚠️ {symbol} 未找到专属美股新闻，保留旧数据")
+            log(f"{symbol} 未找到专属美股新闻，保留旧数据", "WARN")
             return
 
         news_items = []
@@ -87,14 +90,11 @@ def _fetch_news_from_fmp(symbol):
         _write_news_to_firestore(symbol, news_items, raw_len=len(raw_articles),
                                  filtered_len=len(articles))
     except Exception as e:
-        print(f"   ❌ FMP 新闻拉取异常: {e}")
+        log(f"FMP 新闻拉取异常: {e}", "ERROR")
 
 def _fetch_news_from_akshare(symbol):
-    """通过 AkShare 全球财经接口获取港股个股新闻。
-       成功时写入匹配到的新闻；失败或无匹配时，清空该股票的新闻文档。
-    """
+    """通过 AkShare 全球财经接口获取港股个股新闻"""
     try:
-        # 1. 从 list 文档中获取中文名称
         chinese_name = None
         list_doc = db.collection("settings").document("list").get()
         if list_doc.exists:
@@ -104,33 +104,28 @@ def _fetch_news_from_akshare(symbol):
                     chinese_name = val[2] if len(val) >= 3 else None
                     break
         
-        # 2. 构造关键词列表
         keywords = [symbol, symbol.lstrip("0")]
         if chinese_name:
             keywords.append(chinese_name)
-        # 如果有中文名称，可以进一步添加简写（比如去掉后缀“-W”）
         if chinese_name and "-" in chinese_name:
             keywords.append(chinese_name.split("-")[0])
         
-        print(f"   🔍 港股新闻搜索关键词: {keywords}")
+        log(f"港股新闻搜索关键词: {keywords}")
         
-        # 3. 拉取全球快讯
         df = ak.stock_info_global_em()
         if df is None or df.empty:
-            print("   ⚠️ AkShare 全球新闻接口未返回数据，即将清空旧新闻")
+            log("AkShare 全球新闻接口未返回数据，即将清空旧新闻", "WARN")
             _write_news_to_firestore(symbol, [])
             return
         
-        # 4. 在标题中搜索关键词
         pattern = '|'.join(keywords)
         matched = df[df['标题'].str.contains(pattern, case=False, na=False)]
         
         if matched.empty:
-            print(f"   ⚠️ {symbol} 未找到相关港股新闻，即将清空旧新闻")
+            log(f"{symbol} 未找到相关港股新闻，即将清空旧新闻", "WARN")
             _write_news_to_firestore(symbol, [])
             return
         
-        # 5. 提取新闻
         news_items = []
         for _, row in matched.head(5).iterrows():
             news_items.append({
@@ -142,13 +137,11 @@ def _fetch_news_from_akshare(symbol):
         _write_news_to_firestore(symbol, news_items, filtered_len=len(matched))
         
     except Exception as e:
-        print(f"   ❌ AkShare 新闻拉取异常: {e}，即将清空旧新闻")
+        log(f"AkShare 新闻拉取异常: {e}，即将清空旧新闻", "ERROR")
         _write_news_to_firestore(symbol, [])
 
 def _write_news_to_firestore(symbol, news_items, raw_len=0, filtered_len=0):
-    """将新闻写入 Firestore news/{symbol} 文档，覆盖旧数据。
-       允许 news_items 为空列表，此时会清空该股票的新闻。
-    """
+    """将新闻写入 Firestore news/{symbol} 文档，覆盖旧数据"""
     news_ref = db.collection("news").document(symbol)
     now = datetime.now()
     
@@ -162,11 +155,11 @@ def _write_news_to_firestore(symbol, news_items, raw_len=0, filtered_len=0):
             "update_time": now
         })
     
-    log_extra = f"，原始{raw_len}条 → 过滤后{filtered_len}条" if raw_len else ""
+    log_extra = f"，原始{raw_len}条 -> 过滤后{filtered_len}条" if raw_len else ""
     if news_items:
-        print(f"   ✅ {symbol} 新闻已更新 ({len(news_items)}条){log_extra}")
+        log(f"{symbol} 新闻已更新 ({len(news_items)}条){log_extra}")
     else:
-        print(f"   🧹 {symbol} 无相关新闻，已清空旧数据")
+        log(f"{symbol} 无相关新闻，已清空旧数据", "WARN")
 
 # ---------- 实时监听 ----------
 previous_fields = set()
@@ -175,7 +168,7 @@ def on_list_snapshot(doc_snapshot, changes, read_time):
     global previous_fields
     for doc in doc_snapshot:
         if doc.id == "list":
-            print("📡 list 变更")
+            log("list 变更", "INFO")
             data = doc.to_dict()
             if not data:
                 continue
@@ -183,20 +176,31 @@ def on_list_snapshot(doc_snapshot, changes, read_time):
                 "create_time", "create_by", "update_time", "stockNames"
             }
             new_fields = current_fields - previous_fields
-            print(f"📊 current: {current_fields}")
-            print(f"📊 previous: {previous_fields}")
-            print(f"📊 new fields: {new_fields}")
+            log(f"current: {current_fields}")
+            log(f"previous: {previous_fields}")
+            log(f"new fields: {new_fields}")
             previous_fields = current_fields
             for field_name in new_fields:
                 value = data[field_name]
                 if isinstance(value, list) and len(value) >= 2:
                     symbol, region = value[0], value[1]
-                    print(f"🆕 新股票 {symbol} 触发同步及新闻拉取")
-                    # 1. 同步历史数据
-                    smart_sync_logic(symbol, region)
-                    # 2. 拉取新闻（根据地区选择来源）
+                    log(f"新股票 {symbol} 触发同步及新闻拉取")
+                    # 增加间隔和重试
+                    time.sleep(3)
+                    max_retries = 2
+                    for attempt in range(max_retries):
+                        try:
+                            smart_sync_logic(symbol, region)
+                            break
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                log(f"{symbol} 同步失败（已重试{max_retries}次）: {e}", "ERROR")
+                            else:
+                                log(f"{symbol} 同步出错，2秒后重试: {e}", "WARN")
+                                time.sleep(2)
+                    # 拉取新闻
                     fetch_and_store_news(symbol, region)
-                    # 3. 单只预测
+                    # 单只预测
                     generate_single_forecast(symbol)
 
 def start_listener():
@@ -209,15 +213,13 @@ def start_listener():
             "create_time", "create_by", "update_time", "stockNames"
         }
     watch = list_ref.on_snapshot(on_list_snapshot)
-    print("👂 已启动 list 监听")
+    log("已启动 list 监听")
     return watch
 
 # ---------- 定时任务 ----------
 def scheduled_job():
-    print(f"\n⏰ 定时任务触发 - {datetime.now()}")
-    # 1. 全量标识库维护（内部已含一个月检查）
+    log("定时任务触发", "INFO")
     update_all_stock_identifiers()
-    # 2. 历史同步 + 新闻拉取
     list_snap = db.collection("settings").document("list").get().to_dict()
     if list_snap:
         for fname, val in list_snap.items():
@@ -226,26 +228,22 @@ def scheduled_job():
             if isinstance(val, list) and len(val) >= 2:
                 symbol = val[0]
                 region = val[1]
-                # 同步历史数据（内部已有判断，不需要额外操作）
                 smart_sync_logic(symbol, region)
-                # ★ 拉取新闻（根据地区自动选择来源）
                 fetch_and_store_news(symbol, region)
-                time.sleep(0.5)  # 避免接口限流
-    # 3. 全量预测
+                time.sleep(0.5)
     generate_and_update_forecasts()
-    print("✅ 定时任务完成")
+    log("定时任务完成")
 
 # ---------- 主入口 ----------
 if __name__ == "__main__":
     init_or_update_list_doc()
     listener = start_listener()
-    # 注意：如果部署到 Oracle Cloud 等常驻服务器，建议保留定时任务作为兜底
     schedule.every().day.at("09:00").do(scheduled_job)
-    print("⏳ 定时任务已设置：每天 09:00")
+    log("定时任务已设置：每天 09:00")
     try:
         while True:
             schedule.run_pending()
             time.sleep(60)
     except KeyboardInterrupt:
-        print("🛑 停止")
+        log("停止监听", "WARN")
         listener.unsubscribe()

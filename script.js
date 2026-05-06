@@ -61,9 +61,8 @@ function getCurrencySymbol(region) {
     return '¥';
 }
 
-// 获取最后一段历史价格的颜色（用于最新收盘价）
 function getLastHistColor(history) {
-    if (!history || history.length < 2) return 'text-gray-400'; // 不足两条默认灰色
+    if (!history || history.length < 2) return 'text-gray-400';
     const prices = history.map(item => item.price);
     const last = prices[prices.length - 1];
     const prev = prices[prices.length - 2];
@@ -104,14 +103,16 @@ window.onload = async () => {
     Object.keys(STOCKS).forEach(id => setupSubscription(id));
 };
 
-// ---------- 搜索逻辑 ----------
+// ---------- 搜索逻辑（Bug6修复：下拉框挂载到body并动态定位）----------
 function initSearchLogic() {
     const input = document.getElementById('stock-input');
-    let resultBox = document.getElementById('search-results') || document.createElement('div');
-    resultBox.id = 'search-results';
-    resultBox.className = 'search-results';
-    input.parentNode.style.position = 'relative';
-    input.parentNode.appendChild(resultBox);
+    let resultBox = document.getElementById('search-results');
+    if (!resultBox) {
+        resultBox = document.createElement('div');
+        resultBox.id = 'search-results';
+        resultBox.className = 'search-results';
+        document.body.appendChild(resultBox);    // 挂载到body脱离父容器层级
+    }
 
     const updateHighlightStyle = () => {
         const items = resultBox.querySelectorAll('.search-item');
@@ -122,6 +123,14 @@ function initSearchLogic() {
                 item.classList.remove('bg-white/20');
             }
         });
+    };
+
+    const positionResultBox = () => {
+        const rect = input.getBoundingClientRect();
+        resultBox.style.position = 'fixed';
+        resultBox.style.left = rect.left + 'px';
+        resultBox.style.top = (rect.bottom + 8) + 'px';
+        resultBox.style.width = rect.width + 'px';
     };
 
     const ensureCache = async () => {
@@ -141,7 +150,11 @@ function initSearchLogic() {
         }
     };
 
-    input.addEventListener('focus', ensureCache);
+    input.addEventListener('focus', () => {
+        positionResultBox();
+        ensureCache();
+    });
+
     input.addEventListener('input', async (e) => {
         await ensureCache();
         const query = e.target.value.toUpperCase().trim();
@@ -156,9 +169,17 @@ function initSearchLogic() {
         resultBox.innerHTML = matches.map(m =>
             `<div class="search-item" onmousedown="event.preventDefault(); selectStock('${m.symbol}', '${m.name}')">${m.symbol} ${m.name}</div>`
         ).join('');
+        positionResultBox();
         resultBox.style.display = matches.length ? 'block' : 'none';
         highlightIndex = -1;
         updateHighlightStyle();
+    });
+
+    window.addEventListener('resize', () => {
+        if (resultBox.style.display === 'block') positionResultBox();
+    });
+    window.addEventListener('scroll', () => {
+        if (resultBox.style.display === 'block') positionResultBox();
     });
 
     input.addEventListener('keydown', (e) => {
@@ -185,6 +206,7 @@ function initSearchLogic() {
                 const sym = items[highlightIndex].textContent.split(' ')[0];
                 const name = items[highlightIndex].textContent.substring(sym.length + 1);
                 selectStock(sym, name);
+                addStock();                     // 键盘选择后直接添加
             } else {
                 addStock();
             }
@@ -199,27 +221,21 @@ function initSearchLogic() {
     });
 }
 
-// ★ 修改 selectStock，接受名称参数
 window.selectStock = (id, name) => {
     const input = document.getElementById('stock-input');
-    if (name) {
-        input.value = `${id} ${name}`;
-    } else {
-        input.value = id;
-    }
+    input.value = name ? `${id} ${name}` : id;
     document.getElementById('search-results').style.display = 'none';
     highlightIndex = -1;
 };
 
-// ---------- 添加自选 ----------
+// ---------- 添加自选（Bug2校验）----------
 window.addStock = async function () {
     const input = document.getElementById('stock-input');
     const rawVal = input.value.trim();
     if (!rawVal) { alert("未选择股票"); return; }
-    
-    // 从输入框提取纯 symbol（可能包含名称）
+
     const val = rawVal.split(' ')[0].toUpperCase();
-    
+
     let finalSymbol = val, finalName = val, finalRegion = guessRegion(val);
     if (allStocksReady) {
         const matched = allStocksCache.find(s =>
@@ -229,6 +245,9 @@ window.addStock = async function () {
             finalSymbol = matched.symbol;
             finalName = matched.name;
             finalRegion = matched.region;
+        } else {
+            showGlobalError("股票代码不存在，请从搜索列表中选择");
+            return;
         }
     }
 
@@ -319,7 +338,59 @@ function calcAccuracy(history, forecast) {
     return totalAccuracy / count;
 }
 
-// ---------- 列表渲染（卡片信息更新）----------
+// ---------- 拖拽排序（Bug修复：只允许手柄拖拽）----------
+let draggedCard = null;
+let draggedIndex = -1;
+
+function handleDragStart(e) {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) {
+        e.preventDefault();
+        return;
+    }
+    draggedCard = handle.closest('.glass-card');
+    if (!draggedCard) return;
+    draggedIndex = Array.from(draggedCard.parentNode.children).indexOf(draggedCard);
+    e.dataTransfer.setData('text/plain', '');
+    e.dataTransfer.effectAllowed = 'move';
+    draggedCard.classList.add('opacity-50');
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    if (!draggedCard || draggedIndex === -1) return;
+
+    const targetCard = e.target.closest('.glass-card');
+    if (!targetCard || targetCard === draggedCard) return;
+
+    const cards = Array.from(targetCard.parentNode.children);
+    const targetIndex = cards.indexOf(targetCard);
+    if (targetIndex === -1) return;
+
+    const ids = Object.keys(STOCKS);
+    const movedId = ids.splice(draggedIndex, 1)[0];
+    ids.splice(targetIndex, 0, movedId);
+    const newStocks = {};
+    ids.forEach(id => { newStocks[id] = STOCKS[id]; });
+    STOCKS = newStocks;
+    saveToCache();
+    render();
+}
+
+function handleDragEnd(e) {
+    if (draggedCard) {
+        draggedCard.classList.remove('opacity-50');
+    }
+    draggedCard = null;
+    draggedIndex = -1;
+}
+
+// ---------- 列表渲染（只允许手柄拖拽，Feat1修复）----------
 function render() {
     const container = document.getElementById('stock-container');
     if (!container) return;
@@ -342,9 +413,16 @@ function render() {
         const logoUrls = Array.isArray(s.logo) ? s.logo : [s.logo];
 
         return `
-            <div class="glass-card ${isActive ? 'active-card' : ''} ${isError ? 'border-red-500/40' : ''}">
+            <div class="glass-card ${isActive ? 'active-card' : ''} ${isError ? 'border-red-500/40' : ''}"
+                 ondragover="handleDragOver(event)"
+                 ondrop="handleDrop(event)">
                 <div class="p-5 flex items-center justify-between cursor-pointer" onclick="toggleActive('${id}')">
                     <div class="flex items-center gap-4">
+                        <div class="drag-handle cursor-grab text-gray-500 hover:text-gray-300 mr-1" 
+                             title="拖拽排序"
+                             draggable="true"
+                             ondragstart="handleDragStart(event)"
+                             ondragend="handleDragEnd(event)">☰</div>
                         <div class="logo-wrapper">
                             <img src="${logoUrls[0]}" loading="lazy"
                                  onerror="this.onerror=null;this.src='${logoUrls[1] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect fill=%22%23333%22 width=%2232%22 height=%2232%22/%3E%3C/svg%3E'}';">
@@ -396,7 +474,7 @@ function render() {
     if (activeId) setTimeout(() => initChart(activeId), 50);
 }
 
-// ---------- K线图（保持不变）----------
+// ---------- K线图（Bug5最终Connector：只处理最后一个历史点）----------
 function initChart(id) {
     const s = STOCKS[id];
     const canvas = document.getElementById('chart-canvas');
@@ -429,6 +507,7 @@ function initChart(id) {
         return found ? found.price : null;
     });
 
+    // Bug5：foreData 只保留真实预测数据，不插入任何假连接点
     const foreData = labels.map(date => {
         const found = foreArr.find(item => item.date.substring(0, 10) === date);
         return found ? found.price : null;
@@ -449,6 +528,15 @@ function initChart(id) {
         return null;
     };
 
+    // 首个有效点索引（用于灰点）
+    let firstHistIndex = -1, firstForeIndex = -1;
+    for (let i = 0; i < histData.length; i++) {
+        if (histData[i] !== null) { firstHistIndex = i; break; }
+    }
+    for (let i = 0; i < foreData.length; i++) {
+        if (foreData[i] !== null) { firstForeIndex = i; break; }
+    }
+
     const datasets = [
         {
             label: '历史价格',
@@ -461,6 +549,7 @@ function initChart(id) {
             pointHoverBorderWidth: 0,
             pointBackgroundColor: function(ctx) {
                 const idx = ctx.dataIndex;
+                if (idx === firstHistIndex) return '#555555';
                 const curr = ctx.dataset.data[idx];
                 if (curr == null) return '#ff453a';
                 const prev = findPrevValid(ctx.dataset.data, idx);
@@ -481,14 +570,13 @@ function initChart(id) {
             pointHoverBorderWidth: 0,
             pointBackgroundColor: function(ctx) {
                 const idx = ctx.dataIndex;
+                if (idx === firstForeIndex) return '#555555';
                 const curr = ctx.dataset.data[idx];
                 if (curr == null) return '#ff453a';
                 let prev = findPrevValid(ctx.dataset.data, idx);
                 if (prev == null && histData.length > 0) {
                     const lastHistPrice = histData.filter(d => d !== null).pop();
-                    if (lastHistPrice !== undefined) {
-                        prev = lastHistPrice;
-                    }
+                    if (lastHistPrice !== undefined) prev = lastHistPrice;
                 }
                 if (prev == null) return '#ff453a';
                 return curr >= prev ? '#ff453a' : '#32d74b';
@@ -568,22 +656,42 @@ function initChart(id) {
                     const histMeta = chart.getDatasetMeta(0);
                     const foreMeta = chart.getDatasetMeta(1);
 
+                    // ★ 只处理最后一条历史有效数据 ★
                     let lastHistPoint = null;
+                    let lastHistPrice = null;
+                    let lastHistIdx = -1;
                     for (let i = histData.length - 1; i >= 0; i--) {
                         if (histData[i] !== null) {
                             lastHistPoint = histMeta.data[i];
+                            lastHistPrice = histData[i];
+                            lastHistIdx = i;
                             break;
                         }
                     }
-                    let firstForePoint = null;
-                    for (let i = 0; i < foreData.length; i++) {
-                        if (foreData[i] !== null) {
-                            firstForePoint = foreMeta.data[i];
-                            break;
-                        }
-                    }
+                    if (!lastHistPoint) return;
 
-                    if (!lastHistPoint || !firstForePoint) return;
+                    const lastHistLabel = labels[lastHistIdx];
+                    let firstForePoint = null;
+                    let firstForePrice = null;
+                    // 1. 先找同一天
+                    for (let j = 0; j < foreData.length; j++) {
+                        if (foreData[j] !== null && labels[j] === lastHistLabel) {
+                            firstForePoint = foreMeta.data[j];
+                            firstForePrice = foreData[j];
+                            break;
+                        }
+                    }
+                    // 2. 没有同一天，找向后第一个大于T日的预测点
+                    if (!firstForePoint) {
+                        for (let j = 0; j < foreData.length; j++) {
+                            if (foreData[j] !== null && labels[j] > lastHistLabel) {
+                                firstForePoint = foreMeta.data[j];
+                                firstForePrice = foreData[j];
+                                break;
+                            }
+                        }
+                        if (!firstForePoint) return; // 找不到就不画
+                    }
 
                     const ctx = chart.ctx;
                     ctx.save();
@@ -591,9 +699,6 @@ function initChart(id) {
                     ctx.beginPath();
                     ctx.moveTo(lastHistPoint.x, lastHistPoint.y);
                     ctx.lineTo(firstForePoint.x, firstForePoint.y);
-
-                    const lastHistPrice = histData.filter(d => d !== null).pop();
-                    const firstForePrice = foreData.filter(d => d !== null)[0];
                     const color = (firstForePrice >= lastHistPrice) ? '#ff453a' : '#32d74b';
                     ctx.strokeStyle = color;
                     ctx.lineWidth = 2;
@@ -667,7 +772,8 @@ function initChart(id) {
 // ---------- 删除与清空 ----------
 window.removeStock = (e, id) => {
     e.stopPropagation();
-    if (confirm(`移除 ${id}?`)) {
+    const name = STOCKS[id]?.name || '';
+    if (confirm(`移除 ${id} ${name}？`)) {
         if (subscriptions[id]) {
             subscriptions[id]();
             delete subscriptions[id];
@@ -699,3 +805,9 @@ window.toggleActive = (id) => {
     activeId = (activeId === id) ? null : id;
     render();
 };
+
+// 将拖拽相关函数暴露到全局
+window.handleDragStart = handleDragStart;
+window.handleDragOver = handleDragOver;
+window.handleDrop = handleDrop;
+window.handleDragEnd = handleDragEnd;

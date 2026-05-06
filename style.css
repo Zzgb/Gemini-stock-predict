@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 
 :root {
-    --up: #ff453a;   /* 涨：红 */
-    --down: #32d74b; /* 跌：绿 */
+    --up: #ff453a;
+    --down: #32d74b;
     --bg: #000000;
     --border: rgba(255,255,255,0.08);
 }
@@ -15,7 +15,6 @@ body {
     padding-bottom: 100px;
 }
 
-/* 1. 统一 Logo 容器 */
 .logo-wrapper {
     width: 32px;
     height: 32px;
@@ -29,7 +28,6 @@ body {
 }
 .logo-wrapper img { width: 100%; height: 100%; object-fit: contain; }
 
-/* 2. 恢复全局重置按钮位置 */
 .reset-container {
     position: fixed;
     bottom: 30px;
@@ -48,19 +46,19 @@ body {
 }
 .reset-btn:hover { border-color: #ff453a; color: #ff453a; }
 
-/* 3. 搜索联想框 —— 不透明深色背景，确保文字可读 */
+/* Bug1 修复：将搜索结果层置于最上方 */
 .search-results {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
-    background: #0d0d0d;        /* 更深的不透明黑 */
+    background: #0d0d0d;
     border: 1px solid var(--border);
     border-radius: 10px;
     margin-top: 8px;
-    z-index: 9999;
+    z-index: 99999;   /* 提升到最高 */
     display: none;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.6); /* 增加深度感 */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6);
 }
 .search-item {
     padding: 12px 15px;
@@ -72,11 +70,9 @@ body {
 }
 .search-item:hover { background: rgba(255,255,255,0.1); }
 
-/* 4. 涨跌颜色辅助类 */
 .price-up { color: var(--up) !important; }
 .price-down { color: var(--down) !important; }
 
-/* 5. 卡片样式 */
 .glass-card {
     background: rgba(255,255,255,0.03);
     border: 1px solid var(--border);
@@ -85,7 +81,6 @@ body {
 }
 .active-card { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); }
 
-/* 自定义滚动条滑块（暗色） */
 input[type=range]#chart-scroll {
     -webkit-appearance: none;
     appearance: none;
