@@ -407,7 +407,9 @@ function render() {
         const histAccuracyStr = rawHistAcc > 0 ? `${(rawHistAcc * 100).toFixed(1)}%` : '--';
 
         const lastPrice = s.history?.length ? s.history[s.history.length - 1].price : 0;
-        const nextPrice = s.forecast?.length ? s.forecast[0].price : 0;
+        const lastHistDate = s.history?.length ? s.history[s.history.length - 1].date : '';
+        const nextForecast = (s.forecast || []).find(f => f.date > lastHistDate);
+        const nextPrice = nextForecast ? nextForecast.price : 0;
         const region = s.region || guessRegion(id);
         const currencySymbol = getCurrencySymbol(region);
         const forecastColorClass = nextPrice >= lastPrice ? 'price-up' : 'price-down';

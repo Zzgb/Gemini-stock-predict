@@ -168,8 +168,6 @@ def _update_forecast_for_stock(symbol, now):
     predicted_prices, accuracy, reason = gemini_forecast(history, news_titles)
 
     forecast = stock_data.get("forecast", [])
-    last_hist_date = history[-1]["date"]
-    forecast = [item for item in forecast if item.get("date", "") > last_hist_date]
     for date_str, price in zip(future_dates, predicted_prices):
         forecast.append({"date": date_str, "price": price})
 
