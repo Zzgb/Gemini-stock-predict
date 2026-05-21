@@ -219,19 +219,40 @@ def start_listener():
 # ---------- 定时任务 ----------
 def scheduled_job():
     log("定时任务触发", "INFO")
-    update_all_stock_identifiers()
-    list_snap = db.collection("settings").document("list").get().to_dict()
-    if list_snap:
-        for fname, val in list_snap.items():
-            if fname in ["create_time", "create_by", "update_time", "stockNames"]:
-                continue
-            if isinstance(val, list) and len(val) >= 2:
-                symbol = val[0]
-                region = val[1]
-                smart_sync_logic(symbol, region)
-                fetch_and_store_news(symbol, region)
-                time.sleep(0.5)
-    generate_and_update_forecasts()
+    # 阶段1: 全球标识库更新（失败不影响后续）
+    try:
+        update_all_stock_identifiers()
+    except Exception as e:
+        log(f"全球标识库更新失败（已跳过）: {e}", "ERROR")
+
+    # 阶段2: 各股票历史同步 & 新闻
+    try:
+        list_snap = db.collection("settings").document("list").get().to_dict()
+        if list_snap:
+            for fname, val in list_snap.items():
+                if fname in ["create_time", "create_by", "update_time", "stockNames"]:
+                    continue
+                if isinstance(val, list) and len(val) >= 2:
+                    symbol = val[0]
+                    region = val[1]
+                    try:
+                        smart_sync_logic(symbol, region)
+                    except Exception as e:
+                        log(f"{symbol} 历史同步失败（已跳过）: {e}", "ERROR")
+                    try:
+                        fetch_and_store_news(symbol, region)
+                    except Exception as e:
+                        log(f"{symbol} 新闻拉取失败（已跳过）: {e}", "ERROR")
+                    time.sleep(0.5)
+    except Exception as e:
+        log(f"自选股列表获取失败（已跳过）: {e}", "ERROR")
+
+    # 阶段3: 生成预测
+    try:
+        generate_and_update_forecasts()
+    except Exception as e:
+        log(f"预测生成失败（已跳过）: {e}", "ERROR")
+
     log("定时任务完成")
 
 # ---------- 主入口 ----------
