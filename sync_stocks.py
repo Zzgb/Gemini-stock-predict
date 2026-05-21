@@ -2,6 +2,8 @@
 股价历史数据同步脚本（纯历史数据，不含新闻）
 - 每月：更新全球标识库、清理不活跃股票、清理残留 stocks 文档
 - 日常：同步 list 中自选股的历史数据
+- 美股全量列表从 GitHub JSON 文件获取（避免 AkShare 东财接口被限）
+- 港股全量列表继续使用 AkShare
 """
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -9,9 +11,29 @@ import akshare as ak
 from datetime import datetime, timedelta
 import json
 import os
+import requests
+import time
+import random
+
+
+# ---------- 数据源 URL ----------
+US_STOCK_JSON_URLS = {
+    "NASDAQ": "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_full_tickers.json",
+    "NYSE":   "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_full_tickers.json",
+    "AMEX":   "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/amex/amex_full_tickers.json",
+}
 
 def log(msg, level="INFO"):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{level}] {msg}")
+
+# ---------- 设置全局请求头 ----------
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3',
+    'Connection': 'keep-alive'
+})
 
 if not firebase_admin._apps:
     if os.path.exists("serviceAccountKey.json"):
@@ -23,6 +45,95 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client(database_id="gupiaoyucedata")
+
+# ---------- 从 JSON 文件提取美股全量列表 ----------
+def fetch_us_stock_list_from_json():
+    """从 rreichel3/US-Stock-Symbols 的 JSON 文件获取美股全量列表，合并去重"""
+    all_stocks = []
+    seen_symbols = set()
+
+    log("开始从 GitHub JSON 文件下载美股全量列表")
+
+    for exchange_name, url in US_STOCK_JSON_URLS.items():
+        try:
+            log(f"下载 {exchange_name} 数据: {url}")
+            resp = session.get(url, timeout=30)
+            resp.raise_for_status()
+            raw_data = resp.json()
+
+            if not isinstance(raw_data, list):
+                log(f"{exchange_name} 数据格式异常，跳过", "WARN")
+                continue
+
+            valid_count = 0
+            for item in raw_data:
+                if not isinstance(item, dict):
+                    continue
+
+                # 提取 symbol（大小写不敏感）
+                symbol = None
+                for key in ['symbol', 'Symbol', 'SYMBOL', 'ticker', 'Ticker']:
+                    val = item.get(key)
+                    if isinstance(val, str) and val.strip():
+                        symbol = val.strip().upper()
+                        break
+                if not symbol:
+                    continue
+
+                # 提取 name
+                name = None
+                lower_map = {str(k).lower(): v for k, v in item.items()}
+                for key in ['name', 'company', 'company name', 'companyname',
+                            'security name', 'securityname', 'security']:
+                    val = lower_map.get(key)
+                    if isinstance(val, str) and val.strip():
+                        name = val.strip()
+                        break
+                if not name:
+                    name = symbol  # 无名称时用代码
+
+                # 去重
+                if symbol not in seen_symbols:
+                    seen_symbols.add(symbol)
+                    all_stocks.append({
+                        "symbol": symbol,
+                        "name": name,
+                        "displayName": f"{name}-{symbol}",
+                        "region": "美股"
+                    })
+                    valid_count += 1
+
+            log(f"{exchange_name} 获取到 {valid_count} 只有效股票")
+
+        except Exception as e:
+            log(f"下载 {exchange_name} 失败: {e}", "ERROR")
+            # 单个交易所失败不影响其他交易所，继续处理
+
+    log(f"美股全量列表下载完成，共 {len(all_stocks)} 只股票（三大交易所去重后）")
+    return all_stocks
+
+# ---------- 带指数退避的港股取数函数 ----------
+def fetch_stock_list_with_retry(fetch_func, name, max_retries=3, base_delay=2):
+    for attempt in range(max_retries):
+        try:
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+            log(f"{name} 尝试第 {attempt+1}/{max_retries} 次，等待 {delay:.1f} 秒")
+            time.sleep(delay)
+            df = fetch_func()
+            if df is not None and not df.empty:
+                log(f"{name} 取数成功，获取到 {len(df)} 条数据")
+                return df
+            else:
+                log(f"{name} 取数结果为空，重试中...", "WARN")
+        except Exception as e:
+            log(f"{name} 取数失败 (尝试 {attempt+1}/{max_retries}): {e}", "ERROR")
+            if attempt == max_retries - 1:
+                log(f"{name} 重试耗尽，最终失败", "ERROR")
+                return None
+            wait_time = base_delay * (2 ** attempt) + random.uniform(1, 3)
+            log(f"{name} 等待 {wait_time:.1f} 秒后重试...", "WARN")
+            time.sleep(wait_time)
+    return None
 
 # ---------- 月度清理逻辑 ----------
 def clean_stale_and_orphans():
@@ -97,17 +208,39 @@ def update_all_stock_identifiers():
                 should_update = False
     if not should_update:
         return
-    log("抓取全量股票列表")
+
+    log("开始抓取全量股票列表")
     try:
-        df_hk = ak.stock_hk_spot_em()
-        df_us = ak.stock_us_spot_em().head(10000)  # 扩大美股抓取范围
+        # ★ 港股：使用 AkShare
+        log("抓取港股全量列表（AkShare）")
+        df_hk = fetch_stock_list_with_retry(
+            lambda: ak.stock_hk_spot_em(),
+            "港股全量列表"
+        )
+
+        # ★ 美股：使用 GitHub JSON 文件
+        us_stocks_from_json = fetch_us_stock_list_from_json()
+
+        if df_hk is None or not us_stocks_from_json:
+            log("全量取数部分失败，终止本次同步", "ERROR")
+            if df_hk is None:
+                log("港股取数失败，本次全量更新取消", "ERROR")
+                return
+            if not us_stocks_from_json:
+                log("美股取数失败，本次全量更新取消", "ERROR")
+                return
+            return
+
         now = datetime.now()
         existing_ids = set()
         all_stocks_snap = db.collection("all_stocks").select([]).get()
         for doc in all_stocks_snap:
             existing_ids.add(doc.id)
+
         batch = db.batch()
         written = 0
+
+        # 写入港股
         for _, row in df_hk.iterrows():
             symbol = f"{row['代码']}.HK"
             data = {
@@ -125,11 +258,13 @@ def update_all_stock_identifiers():
                 data["create_by"] = "Gemini AI"
                 batch.set(ref, data)
             written += 1
-        for _, row in df_us.iterrows():
-            symbol = row['代码']
+
+        # 写入美股
+        for stock in us_stocks_from_json:
+            symbol = stock["symbol"]
             data = {
-                "displayName": f"{row['名称']}-{symbol}",
-                "name": row['名称'],
+                "displayName": stock["displayName"],
+                "name": stock["name"],
                 "symbol": symbol,
                 "region": "美股",
                 "update_time": now
@@ -142,15 +277,20 @@ def update_all_stock_identifiers():
                 data["create_by"] = "Gemini AI"
                 batch.set(ref, data)
             written += 1
+
         batch.commit()
         config_ref.set({
             "lastUpdate_time": current_date.strftime("%Y-%m-%d"),
             "update_time": now
         }, merge=True)
-        log(f"all_stocks 同步完成，处理 {written} 只股票")
+        log(f"all_stocks 同步完成，共处理 {written} 只股票")
+
     except Exception as e:
         log(f"all_stocks 同步失败: {e}", "ERROR")
-    clean_stale_and_orphans()
+    try:
+        clean_stale_and_orphans()
+    except Exception as e:
+        log(f"月度清理失败（已跳过）: {e}", "ERROR")
 
 # ---------- 维护自选列表 ----------
 def init_or_update_list_doc():

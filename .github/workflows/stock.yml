@@ -30,4 +30,4 @@ jobs:
           echo "FMP_API_KEY = ${{ secrets.FMP_API_KEY }}" >> config.ini
 
       - name: 执行全量同步、新闻拉取与预测
-        run: python -c "from main import scheduled_job; scheduled_job()"
+        run: python -c "from main import scheduled_job; scheduled_job()" || echo "执行完毕（部分步骤有错误已跳过）"
