@@ -184,6 +184,8 @@ function initSearchLogic() {
 
     input.addEventListener('keydown', (e) => {
         const items = resultBox.querySelectorAll('.search-item');
+        // 输入法组合输入时不处理任何键盘事件
+        if (e.isComposing) return;
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             if (items.length > 0) {
@@ -516,8 +518,9 @@ function initChart(id) {
     const lastHistDate = histArr.length ? histArr[histArr.length - 1].date.substring(0, 10) : null;
 
     const segmentColor = (ctx) => {
-        const p0 = ctx.p0.parsed.y;
-        const p1 = ctx.p1.parsed.y;
+        const p0 = ctx.p0?.parsed?.y;
+        const p1 = ctx.p1?.parsed?.y;
+        if (p0 == null || p1 == null) return '#ff453a';
         return p1 >= p0 ? '#ff453a' : '#32d74b';
     };
 
@@ -668,7 +671,7 @@ function initChart(id) {
                             break;
                         }
                     }
-                    if (!lastHistPoint) return;
+                    if (!lastHistPoint || lastHistPoint.x == null) return;
 
                     const lastHistLabel = labels[lastHistIdx];
                     let firstForePoint = null;
@@ -676,18 +679,24 @@ function initChart(id) {
                     // 1. 先找同一天
                     for (let j = 0; j < foreData.length; j++) {
                         if (foreData[j] !== null && labels[j] === lastHistLabel) {
-                            firstForePoint = foreMeta.data[j];
-                            firstForePrice = foreData[j];
-                            break;
+                            const pt = foreMeta.data[j];
+                            if (pt && pt.x != null) {
+                                firstForePoint = pt;
+                                firstForePrice = foreData[j];
+                                break;
+                            }
                         }
                     }
                     // 2. 没有同一天，找向后第一个大于T日的预测点
                     if (!firstForePoint) {
                         for (let j = 0; j < foreData.length; j++) {
                             if (foreData[j] !== null && labels[j] > lastHistLabel) {
-                                firstForePoint = foreMeta.data[j];
-                                firstForePrice = foreData[j];
-                                break;
+                                const pt = foreMeta.data[j];
+                                if (pt && pt.x != null) {
+                                    firstForePoint = pt;
+                                    firstForePrice = foreData[j];
+                                    break;
+                                }
                             }
                         }
                         if (!firstForePoint) return; // 找不到就不画
