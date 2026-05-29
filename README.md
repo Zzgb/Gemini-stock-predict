@@ -1,4 +1,4 @@
-<!-- /**
+ ----------------------[Example](https://zzgb.github.io/Gemini-stock-predict/)-- https://zzgb.github.io/Gemini-stock-predict/ ----------------------
  * PROJECT NAME : 股票预测项目 (Stock Prediction Project)
  * AUTHORS      : Gemini(架构) & DeepSeek(代码) & Claude(救火) & Zzzzk(划水)
  * START DATE   : 2026-05-03
@@ -52,7 +52,7 @@
  *    - 清理机制: 月度清理不活跃股票 (30天未访问) 与残留 stocks 文档
  *    - Space 保活: cron-job.org 每 5 分钟 GET 请求防休眠
  * 
- */ -->
+ *
 
 ---
 
