@@ -210,83 +210,90 @@ def update_all_stock_identifiers():
         return
 
     log("开始抓取全量股票列表")
+    now = datetime.now()
+    existing_ids = set()
+    all_stocks_snap = db.collection("all_stocks").select([]).get()
+    for doc in all_stocks_snap:
+        existing_ids.add(doc.id)
+
+    total_written = 0
+    any_success = False
+
+    # ── 港股 ──
     try:
-        # ★ 港股：使用 AkShare
         log("抓取港股全量列表（AkShare）")
         df_hk = fetch_stock_list_with_retry(
             lambda: ak.stock_hk_spot_em(),
             "港股全量列表"
         )
+        if df_hk is not None and not df_hk.empty:
+            batch_hk = db.batch()
+            hk_written = 0
+            for _, row in df_hk.iterrows():
+                symbol = f"{row['代码']}.HK"
+                data = {
+                    "displayName": f"{row['名称']}-{symbol}",
+                    "name": row['名称'],
+                    "symbol": symbol,
+                    "region": "港股",
+                    "update_time": now
+                }
+                ref = db.collection("all_stocks").document(symbol)
+                if symbol in existing_ids:
+                    batch_hk.update(ref, data)
+                else:
+                    data["create_time"] = now
+                    data["create_by"] = "Gemini AI"
+                    batch_hk.set(ref, data)
+                hk_written += 1
+            batch_hk.commit()
+            log(f"港股标识库写入完成，共 {hk_written} 只")
+            total_written += hk_written
+            any_success = True
+        else:
+            log("港股取数返回空，已跳过", "WARN")
+    except Exception as e:
+        log(f"港股标识库同步失败（已跳过，不影响美股）: {e}", "ERROR")
 
-        # ★ 美股：使用 GitHub JSON 文件
+    # ── 美股 ──
+    try:
+        log("抓取美股全量列表（GitHub JSON）")
         us_stocks_from_json = fetch_us_stock_list_from_json()
+        if us_stocks_from_json:
+            batch_us = db.batch()
+            us_written = 0
+            for stock in us_stocks_from_json:
+                symbol = stock["symbol"]
+                data = {
+                    "displayName": stock["displayName"],
+                    "name": stock["name"],
+                    "symbol": symbol,
+                    "region": "美股",
+                    "update_time": now
+                }
+                ref = db.collection("all_stocks").document(symbol)
+                if symbol in existing_ids:
+                    batch_us.update(ref, data)
+                else:
+                    data["create_time"] = now
+                    data["create_by"] = "Gemini AI"
+                    batch_us.set(ref, data)
+                us_written += 1
+            batch_us.commit()
+            log(f"美股标识库写入完成，共 {us_written} 只")
+            total_written += us_written
+            any_success = True
+        else:
+            log("美股取数返回空，已跳过", "WARN")
+    except Exception as e:
+        log(f"美股标识库同步失败（已跳过，不影响港股）: {e}", "ERROR")
 
-        if df_hk is None or not us_stocks_from_json:
-            log("全量取数部分失败，终止本次同步", "ERROR")
-            if df_hk is None:
-                log("港股取数失败，本次全量更新取消", "ERROR")
-                return
-            if not us_stocks_from_json:
-                log("美股取数失败，本次全量更新取消", "ERROR")
-                return
-            return
-
-        now = datetime.now()
-        existing_ids = set()
-        all_stocks_snap = db.collection("all_stocks").select([]).get()
-        for doc in all_stocks_snap:
-            existing_ids.add(doc.id)
-
-        batch = db.batch()
-        written = 0
-
-        # 写入港股
-        for _, row in df_hk.iterrows():
-            symbol = f"{row['代码']}.HK"
-            data = {
-                "displayName": f"{row['名称']}-{symbol}",
-                "name": row['名称'],
-                "symbol": symbol,
-                "region": "港股",
-                "update_time": now
-            }
-            ref = db.collection("all_stocks").document(symbol)
-            if symbol in existing_ids:
-                batch.update(ref, data)
-            else:
-                data["create_time"] = now
-                data["create_by"] = "Gemini AI"
-                batch.set(ref, data)
-            written += 1
-
-        # 写入美股
-        for stock in us_stocks_from_json:
-            symbol = stock["symbol"]
-            data = {
-                "displayName": stock["displayName"],
-                "name": stock["name"],
-                "symbol": symbol,
-                "region": "美股",
-                "update_time": now
-            }
-            ref = db.collection("all_stocks").document(symbol)
-            if symbol in existing_ids:
-                batch.update(ref, data)
-            else:
-                data["create_time"] = now
-                data["create_by"] = "Gemini AI"
-                batch.set(ref, data)
-            written += 1
-
-        batch.commit()
+    if any_success:
         config_ref.set({
             "lastUpdate_time": current_date.strftime("%Y-%m-%d"),
             "update_time": now
         }, merge=True)
-        log(f"all_stocks 同步完成，共处理 {written} 只股票")
-
-    except Exception as e:
-        log(f"all_stocks 同步失败: {e}", "ERROR")
+    log(f"all_stocks 同步完成，本次共处理 {total_written} 只股票")
     try:
         clean_stale_and_orphans()
     except Exception as e:
