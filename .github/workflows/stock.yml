@@ -1,8 +1,8 @@
 name: 每日全量同步与预测
 
 on:
-  schedule:
-    - cron: '0 1 * * *'    # 每天 UTC 1:00（北京时间 9:00）
+#  schedule:
+#    - cron: '0 1 * * *'    # 每天 UTC 1:00（北京时间 9:00）
   workflow_dispatch:        # 仍允许手动触发
 
 jobs:
